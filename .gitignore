@@ -49,3 +49,4 @@ localstore/*
 *.pt
 
 /src/oxide/modules/extractors_dev/path_complexity/src
+.oxide/

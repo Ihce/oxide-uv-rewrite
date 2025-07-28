@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Tuple, Dict, Set, Literal, overload
+from typing import Any, List, Optional, Tuple, Dict, Set, Literal
 #from core.ohints.ghidra_hints import GhidraDisasmBlocks, GhidraDisasmFunctions
 # pyright: reportAssignmentType=false
 # pyright: reportUnusedVariable=false
@@ -97,7 +97,7 @@ def get_tags(oid: str) -> Optional[List[str]]:
 def import_file(file_location: str, dir_override: Optional[str] = None) -> Tuple[Optional[str], bool]:
     ...
 def import_directory(directory: str, dir_override: Optional[str] = None) -> Tuple[List[str], int]:
-    ...    
+    ...
 def local_available_data(plugin_name: str) -> List[str]:
     ...
 def local_retrieve_all(plugin_name: str) -> Dict[str, bytes]:
@@ -143,7 +143,7 @@ def modules_list(module_type: str = "all", show_private: bool = False):
 def retrieve(mod_name: str, oid_list: List[str] | str, opts: dict = {},
              lock: bool = False, dir_override: Optional[str] = None) -> Optional[dict]:
     """ Returns the results of calling a module over an oid_list.
-    
+
     Args:
     mod_name (str): The name of the module to call
     oid_list (List[str] | str): The OID or OIDs to call the module on

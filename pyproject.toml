@@ -1,7 +1,3 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "oxide-re"
 version = "4.0.0"
@@ -27,14 +23,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Full installation with all analysis tools
 full = [
     # Original dependencies
     "colorama",
     "termcolor",
     "r2pipe",
     "flare-capa",
-
+    "toml",
     # Core analysis dependencies
     "networkx",
     "numpy",
@@ -49,9 +44,8 @@ full = [
 
     # Disassemblers and analysis
     "capstone",
-    "angr",
-    "pyxed",    # If available
-]
+    "angr",     # If available
+] # Full installation with all analysis tools
 
 # API server dependencies
 api = ["flask", "flask-cors", "gunicorn"]

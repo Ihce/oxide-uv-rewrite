@@ -30,7 +30,7 @@ import logging
 import configparser
 from pathlib import Path
 import shutil
-
+import toml
 from oxide.core import sys_utils
 from oxide.core import user_directories
 from oxide.core.otypes import cast_string, convert_logging_level
@@ -50,7 +50,7 @@ dir_root = Path(sys_utils.ROOT_DIR).absolute()
 dir_oxide = Path(sys_utils.OXIDE_DIR).absolute()
 
 # Filename and path for configuration
-CONFIG_FILE = ".config.txt"
+CONFIG_FILE = "oxide.toml"
 CONFIG_FILE_PATH = None  # Update in set_application_directories
 
 # Directory for data files
@@ -167,66 +167,51 @@ def user_data_directory():
             path = path = Path(path) / APPLICATION
     return path
 
+
 def set_application_directories() -> None:
-    """ Inspired by appdirs project: https://github.com/ActiveState/appdirs
-    Use good default locations so users have predictable location to find scratch and config
-    """
+    """ Use project root for all data storage """
     global CONFIG_FILE_PATH
     global DATA_DIRECTORY
-    global AUTHOR
-    global APPLICATION
 
-    system = sys.platform
+    # Use project root for all data
+    project_root = Path(sys_utils.ROOT_DIR).parent.parent
+    oxide_dir = project_root / ".oxide"
 
-    """ Usual configuration directories
-        Mac OS X:               ~/Library/Preferences/<AppName>
-        Unix:                   ~/.config/<AppName>     # or in $XDG_CONFIG_HOME, if defined
-        Win *:                  same as user_data_dir
-    """
-    if system == "win32":
-        path = user_data_directory()
-    elif system == 'darwin':
-        path = Path('~/Library/Preferences/').expanduser()
-        if APPLICATION:
-            path = path / APPLICATION
-    else:
-        path = os.getenv('XDG_CONFIG_HOME', os.path.expanduser("~/.config"))
-        if APPLICATION:
-            path = Path(path) / APPLICATION
+        # Configuration in .oxide
+    CONFIG_FILE_PATH = oxide_dir / CONFIG_FILE
 
-    ''' Usual Data directories
-        Windows:                C:\\Users\\<username>\\AppData\\Local\\<Organization>\\<App>
-        Mac OS X:               ~/Library/Application Support/<App>
-        Linux:                   ~/.local/share/<App>    # Alternative: $XDG_DATA_HOME, if in env
-    '''
-    CONFIG_FILE_PATH = path / CONFIG_FILE
-    DATA_DIRECTORY = user_data_directory()
+        # Data directory in .oxide
+    DATA_DIRECTORY = oxide_dir / "data"
+
     print(f" - Location of configuration file   : {CONFIG_FILE_PATH}")
-    if path and not path.exists():
-        path.mkdir(parents=True, exist_ok=True)
-        path.chmod(0o755)
-        print(f" - created config directory: {path.absolute()}")
+    if CONFIG_FILE_PATH and not CONFIG_FILE_PATH.parent.exists():
+        CONFIG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        print(f" - created config directory: {CONFIG_FILE_PATH.parent.absolute()}")
+
     print(f" - Default location to store data and caching: {DATA_DIRECTORY}")
     if DATA_DIRECTORY and not DATA_DIRECTORY.exists():
         DATA_DIRECTORY.mkdir(parents=True, exist_ok=True)
-        DATA_DIRECTORY.chmod(0o755)
         print(f" - created data directory: {DATA_DIRECTORY.absolute()}")
 
 
 def set_oxide_config_defaults() -> None:
     global DIR_DEFAULTS
+
+    # Project root is the base for everything
+    project_root = Path(sys_utils.ROOT_DIR).parent.parent
+
     DIR_DEFAULTS = {"config"         : str(CONFIG_FILE_PATH),
                     "root"           : str(dir_root),
                     "oxide"          : str(dir_oxide),
                     "libraries"      : str(dir_oxide / "libraries"),
-                    "modules"        : str(dir_root / "modules"),
-                    "plugins"        : str(DATA_DIRECTORY / "plugins"),
-                    "plugins_dev"    : str(DATA_DIRECTORY / "plugins_dev"),
+                    "modules"        : str(project_root / "src/oxide/modules"),
+                    "plugins"        : str(project_root / "src/oxide/plugins"),
+                    "plugins_dev"    : str(project_root / "src/oxide/plugins_dev"),
                     "data_dir"       : str(DATA_DIRECTORY),
                     "datasets"       : str(DATA_DIRECTORY / "datasets"),
                     "datastore"      : str(DATA_DIRECTORY / "db"),
                     "localstore"     : str(DATA_DIRECTORY / "localstore"),
-                    "logs"           : str(DATA_DIRECTORY),
+                    "logs"           : str(DATA_DIRECTORY / "logs"),
                     "reference"      : str(DATA_DIRECTORY / "reference"),
                     "scratch"        : str(DATA_DIRECTORY / "scratch"),
                     "sample_dataset" : str(DATA_DIRECTORY / "datasets" / "sample_dataset"),
@@ -237,7 +222,7 @@ def set_oxide_config_defaults() -> None:
                     "ghidra_path5"   : "",
                     "ida_path"       : "",
                     "ghidra_project" : str(DATA_DIRECTORY / "scratch"),
-                    "scripts"        : str(dir_root.parent.parent / "scripts"),  # actual oxide_root
+                    "scripts"        : str(project_root / "scripts"),
                     "local_llm_path": "",
                     }
     ALL_DEFAULTS['dir'] = DIR_DEFAULTS
@@ -326,15 +311,18 @@ def setup(section: str = "all", initial_setup: bool = False) -> None:
     setup_run = True
 
 
+# Replace at top of file
+CONFIG_FILE = "oxide.toml"
+CONFIG_FILE_PATH = None  # Set in init
+
 def init() -> None:
     global config_changed
     global CONFIG_FILE_PATH
 
-    # Find system preferred location for config file so Oxide uses predictable directoriess
-    # This will update CONFIG_FILE_PATH
+    # Find system preferred location for config file
     set_application_directories()
 
-    # Using udpated CONFIG_FILE_PATH, update default locations
+    # IMPORTANT: Set defaults BEFORE trying to use them
     set_oxide_config_defaults()
 
     # Check if the config file exists. If not create it using defaults
@@ -384,56 +372,67 @@ def validate_dir_oxide() -> None:
         config_changed = True
 
 
-def read_config(fd) -> None:
-    """ Reads the configuration in the file referenced by fd.
-        the global config_file string variable is only used in error handling
-    globals:
-        RCP: ConfigParser
-    """
-    global rcp
-    global CONFIG_FILE_PATH
-    try:
-        rcp.read_file(fd, CONFIG_FILE_PATH)
-    except IOError as e:
-        logger.error("ConfigParse exception:%s", e)
+# def read_config(fd) -> None:
+#     """ Reads the configuration in the file referenced by fd.
+#         the global config_file string variable is only used in error handling
+#     globals:
+#         RCP: ConfigParser
+#     """
+#     global rcp
+#     global CONFIG_FILE_PATH
+#     try:
+#         rcp.read_file(fd, CONFIG_FILE_PATH)
+#     except IOError as e:
+#         logger.error("ConfigParse exception:%s", e)
 
-def read_config(fd):
-    """ Reads the configuration in the file referenced by fd.
-        the global config_file string variable is only used in error handling
-    globals:
-        RCP: ConfigParser
-    """
-    global rcp
-    global CONFIG_FILE_PATH
-    try:
-        rcp.read_file(fd, CONFIG_FILE_PATH)
-        # Ensure all keys are included even if not predefined in ALL_DEFAULTS
-        for section in rcp.sections():
-            if section not in ALL_DEFAULTS:
-                logger.error("Section %s not in ALL_DEFAULTS", section)
-                continue
-                # ALL_DEFAULTS[section] = {} # we should probably not add new sections, but leaving this just in case
-            for key in rcp.options(section):
-                if key not in ALL_DEFAULTS[section]:
-                    logger.info("Detected new key %s in section %s", key, section)
-                    ALL_DEFAULTS[section][key] = rcp.get(section, key)
-    except IOError as e:
-        logger.error("ConfigParse exception:%s", e)
+# def read_config(fd):
+#     """ Reads the configuration in the file referenced by fd.
+#         the global config_file string variable is only used in error handling
+#     globals:
+#         RCP: ConfigParser
+#     """
+#     global rcp
+#     global CONFIG_FILE_PATH
+#     try:
+#         rcp.read_file(fd, CONFIG_FILE_PATH)
+#         # Ensure all keys are included even if not predefined in ALL_DEFAULTS
+#         for section in rcp.sections():
+#             if section not in ALL_DEFAULTS:
+#                 logger.error("Section %s not in ALL_DEFAULTS", section)
+#                 continue
+#                 # ALL_DEFAULTS[section] = {} # we should probably not add new sections, but leaving this just in case
+#             for key in rcp.options(section):
+#                 if key not in ALL_DEFAULTS[section]:
+#                     logger.info("Detected new key %s in section %s", key, section)
+#                     ALL_DEFAULTS[section][key] = rcp.get(section, key)
+#     except IOError as e:
+#         logger.error("ConfigParse exception:%s", e)
 
 
 def read_config_file() -> bool:
-    """ This function opens a file based on the global config_file string and calls
-        read_config to actually read the configuration in.
-    """
+    """ Read TOML configuration file """
     global CONFIG_FILE_PATH
     global logger
+    global rcp
+
     logger.debug("Reading config file %s", CONFIG_FILE_PATH)
     try:
         with open(CONFIG_FILE_PATH, "r") as fd:
-            read_config(fd)
+            config_dict = toml.load(fd)
+
+        # Convert TOML dict to ConfigParser format for compatibility
+        rcp.clear()
+        for section, values in config_dict.items():
+            if not rcp.has_section(section):
+                rcp.add_section(section)
+            if isinstance(values, dict):
+                for key, value in values.items():
+                    rcp.set(section, key, str(value))
+            else:
+                rcp.set("general", section, str(values))
         return True
-    except IOError:
-        logger.error("Unable to read config file %s", CONFIG_FILE_PATH)
+    except (IOError, toml.TomlDecodeError) as e:
+        logger.error("Unable to read config file %s: %s", CONFIG_FILE_PATH, e)
         return False
 
 
@@ -518,25 +517,32 @@ def set_value(section: str, option: str, value: str) -> None:
 
 
 def write_config_file(new_config_file: str = None) -> None:
-    """ This function opens a file based on the global config_file string and writes the
-        current configuration out to it.
-    """
+    """ Write configuration to TOML file """
     global CONFIG_FILE
     global CONFIG_FILE_PATH
     global rcp
 
     if new_config_file:
         CONFIG_FILE = new_config_file
-        CONFIG_FILE_PATH = os.path.join(dir_root, CONFIG_FILE)
+        project_root = Path(sys_utils.ROOT_DIR).parent.parent
+        CONFIG_FILE_PATH = project_root / CONFIG_FILE
 
     logger.debug("Writing config to %s", CONFIG_FILE_PATH)
+
+    # Convert ConfigParser to dict for TOML
+    config_dict = {}
+    for section in rcp.sections():
+        config_dict[section] = {}
+        for option in rcp.options(section):
+            value = rcp.get(section, option)
+            # Try to convert string values back to appropriate types
+            config_dict[section][option] = cast_string(value)
+
     try:
-        fd = open(CONFIG_FILE_PATH, "w")
-        rcp.write(fd)
-        fd.close()
+        with open(CONFIG_FILE_PATH, "w") as fd:
+            toml.dump(config_dict, fd)
     except IOError as err:
-        logger.error("Unable to write config file %s", CONFIG_FILE_PATH)
-        logger.error(str(err))
+        logger.error("Unable to write config file %s: %s", CONFIG_FILE_PATH, err)
 
 
 def get_logging_level() -> Optional[int]:
