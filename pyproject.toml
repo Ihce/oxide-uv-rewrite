@@ -1,34 +1,171 @@
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "oxide-re"
 version = "4.0.0"
 description = "Oxide is a flexible, modular, distributed framework for performing analysis of data files, including executables."
 readme = "README.md"
-requires-python = ">=3.6"
-classifiers=[
-    "Programming Language :: Python :: 3"
+requires-python = ">=3.13"
+license = { file = "licenses/LICENSE" }
+authors = [{ name = "Program Understanding Lab" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Security",
+    "Topic :: Software Development :: Disassemblers",
 ]
-dependencies = []
+dependencies = [
+    # Core dependencies - minimal set
+    "appdirs",
+]
 
 [project.optional-dependencies]
+# Full installation with all analysis tools
 full = [
+    # Original dependencies
     "colorama",
     "termcolor",
     "r2pipe",
-    "flare-capa"
-]  # or include minimal dependencies if there are any
+    "flare-capa",
 
+    # Core analysis dependencies
+    "networkx",
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "prettytable",
+    "graphviz",
+    "pydot",
+    "py-tlsh",
+    "pyahocorasick",
+    "opencv-python",
 
-[project.urls]  # Optional
-# "Homepage" = "https://myhomepage.com"
-"HomePage" = "https://github.com/Program-Understanding/oxide"
+    # Disassemblers and analysis
+    "capstone",
+    "angr",
+    "pyxed",    # If available
+]
+
+# API server dependencies
+api = ["flask", "flask-cors", "gunicorn"]
+
+# LLM service dependencies
+llm = ["openai", "anthropic", "transformers", "torch"]
+
+# MCP server dependencies
+mcp = ["mcp", "asyncio", "websockets"]
+
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+]
+
+# Documentation dependencies
+docs = ["sphinx", "sphinx-rtd-theme", "sphinx-autodoc-typehints"]
+
+[project.urls]
+"Homepage" = "https://github.com/Program-Understanding/oxide"
 "Bug Reports" = "https://github.com/Program-Understanding/oxide/issues"
 "Source" = "https://github.com/Program-Understanding/oxide"
+"Documentation" = "https://github.com/Program-Understanding/oxide/wiki"
 
 [project.scripts]
+# Core scripts
 oxide = "oxide.shell:main"
 oxide-remote = "oxide.rshell:main"
 oxide-server = "oxide.server:main"
+
+# Service scripts
+oxide-api = "services.api_server.main:main"
+oxide-llm = "services.llm_service:main"
+oxide-mcp = "services.mcp_server:main"
+oxide-mcp-basic = "services.mcp_server_basic:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/oxide", "services"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/services",
+    "/scripts",
+    "/docs",
+    "/licenses",
+    "/tests",
+    "README.md",
+    "pyproject.toml",
+]
+exclude = ["*.pyc", "__pycache__", ".git", ".pytest_cache", "backup"]
+
+[tool.uv]
+dev-dependencies = ["ipython>=8.0.0", "ipdb>=0.13.0"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py38"
+extend-exclude = ["scripts/*.java", "services/web_app/", "backup/"]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501", # line too long (handled by formatter)
+    "B008", # do not perform function calls in argument defaults
+    "C901", # too complex
+]
+
+[tool.ruff.isort]
+known-first-party = ["oxide", "services"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["*_test.py", "test_*.py", "test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+exclude = ["scripts/", "services/web_app/", "backup/"]
+
+[tool.black]
+line-length = 120
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.git
+  | \.mypy_cache
+  | \.pytest_cache
+  | backup
+  | services/web_app
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["oxide", "services"]
+skip_glob = ["*/web_app/*", "backup/*"]
