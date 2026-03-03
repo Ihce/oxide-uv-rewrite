@@ -149,6 +149,10 @@ jobs:
                   n = n[5:]
               return n
 
+          def format_suite(n):
+              import re
+              return re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', n)
+
           total_tests = sum(len(t) for t in suites.values())
           total_pass = sum(1 for s in suites.values() for _, st, _ in s if st == "pass")
           total_fail = sum(1 for s in suites.values() for _, st, _ in s if st != "pass")
@@ -160,24 +164,21 @@ jobs:
               f.write("|---|---|---|---|---|\n")
               f.write(f"| Oxide Test Report | {total_tests} ran | {total_pass} passed | {total_skip} skipped | {total_fail} failed |\n\n")
 
-              # Detailed results table
-              f.write("| Test | Result | Reason |\n")
-              f.write("|------|--------|--------|\n")
-
               for suite, tests in suites.items():
                   passed = [t for t in tests if t[1] == "pass"]
                   failed = [t for t in tests if t[1] != "pass"]
 
-                  # Suite header row
-                  f.write(f"| **{suite}** | | |\n")
+                  f.write(f"## {format_suite(suite)}\n\n")
 
-                  # Failed tests with reason
-                  for name, _, msg in failed:
-                      f.write(f"| {clean_name(name)} | :x: failed | {msg} |\n")
+                  if failed:
+                      f.write("| Module | Result | Reason |\n")
+                      f.write("|--------|--------|--------|\n")
+                      for name, _, msg in failed:
+                          f.write(f"| {clean_name(name)} | :x: | {msg} |\n")
+                      f.write("\n")
 
-                  # Collapsed passed count
                   if passed:
-                      f.write(f"| *{len(passed)} passed* | :white_check_mark: | |\n")
+                      f.write(f":white_check_mark: {len(passed)} passed\n\n")
 
           SCRIPT
 
