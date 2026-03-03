@@ -142,9 +142,12 @@ jobs:
               suites.setdefault(suite, []).append((name, status, msg))
 
           def clean_name(n):
-              for prefix in ["test_module_loaded[", "test_extractor[", "test_analyzer[", "test_map_reducer[", "test_"]:
-                  n = n.replace(prefix, "")
-              return n.rstrip("]")
+              # Strip test method prefix and brackets
+              if "[" in n:
+                  n = n.split("[", 1)[1].rstrip("]")
+              elif n.startswith("test_"):
+                  n = n[5:]
+              return n
 
           with open(summary_path, "w") as f:
               total_pass = sum(1 for s in suites.values() for _, st, _ in s if st == "pass")
