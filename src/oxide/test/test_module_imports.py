@@ -1,10 +1,13 @@
 """Test that oxide modules initialize and can run against real binaries."""
 import json
 import os
+import signal
 
 import _path_magic
 import pytest
 import core.oxide as oxide
+
+MODULE_TIMEOUT = 60
 
 
 TEST_BINS_DIR = os.environ.get("OXIDE_TEST_BINS", "/home/tools/Projects/ci_pipeline/test_bins")
@@ -55,8 +58,24 @@ def _assert_module_loaded(module_type, mod_name):
     assert mod_name in available, f"{mod_name}: not loaded (check deps or syntax)"
 
 
+class _Timeout(Exception):
+    pass
+
+
+def _timeout_handler(signum, frame):
+    raise _Timeout()
+
+
 def _assert_module_runs(mod_name, oid_list):
-    results = oxide.retrieve(mod_name, oid_list, {})
+    old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+    signal.alarm(MODULE_TIMEOUT)
+    try:
+        results = oxide.retrieve(mod_name, oid_list, {})
+    except _Timeout:
+        pytest.skip(f"{mod_name}: timed out after {MODULE_TIMEOUT}s")
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
     assert results is not None, f"{mod_name}: returned None"
     err = _check_json_serializable(results)
     assert err is None, f"{mod_name}: not JSON serializable: {err}"

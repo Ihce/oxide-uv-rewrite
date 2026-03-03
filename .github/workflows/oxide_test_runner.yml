@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: oxide-test
+  cancel-in-progress: true
+
 jobs:
   oxide-test:
     name: Oxide Test Runner
@@ -127,10 +131,15 @@ jobs:
           for tc in root.iter("testcase"):
               suite = tc.get("classname", "unknown").split(".")[-1]
               name = tc.get("name")
+              time = float(tc.get("time", 0))
               failure = tc.find("failure")
               error = tc.find("error")
+              skipped = tc.find("skipped")
 
-              if failure is not None:
+              if skipped is not None:
+                  msg = skipped.get("message", "").split("\n")[0]
+                  status = "skip"
+              elif failure is not None:
                   msg = failure.get("message", "").split("\n")[0]
                   status = "fail"
               elif error is not None:
@@ -140,7 +149,7 @@ jobs:
                   msg = ""
                   status = "pass"
 
-              suites.setdefault(suite, []).append((name, status, msg))
+              suites.setdefault(suite, []).append((name, status, msg, time))
 
           def clean_name(n):
               if "[" in n:
@@ -154,27 +163,34 @@ jobs:
               return re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', n)
 
           total_tests = sum(len(t) for t in suites.values())
-          total_pass = sum(1 for s in suites.values() for _, st, _ in s if st == "pass")
-          total_fail = sum(1 for s in suites.values() for _, st, _ in s if st != "pass")
-          total_skip = 0
+          total_pass = sum(1 for s in suites.values() for _, st, _, _ in s if st == "pass")
+          total_fail = sum(1 for s in suites.values() for _, st, _, _ in s if st in ("fail", "error"))
+          total_skip = sum(1 for s in suites.values() for _, st, _, _ in s if st == "skip")
 
           with open(summary_path, "w") as f:
-              # Summary badge table
-              f.write("| | Tests | Passed :white_check_mark: | Skipped | Failed :x: |\n")
+              f.write("| | Tests | Passed :white_check_mark: | Skipped :fast_forward: | Failed :x: |\n")
               f.write("|---|---|---|---|---|\n")
               f.write(f"| Oxide Test Report | {total_tests} ran | {total_pass} passed | {total_skip} skipped | {total_fail} failed |\n\n")
 
               for suite, tests in suites.items():
                   passed = [t for t in tests if t[1] == "pass"]
-                  failed = [t for t in tests if t[1] != "pass"]
+                  failed = [t for t in tests if t[1] in ("fail", "error")]
+                  skipped = [t for t in tests if t[1] == "skip"]
 
                   f.write(f"## {format_suite(suite)}\n\n")
 
                   if failed:
-                      f.write("| Module | Result | Reason |\n")
-                      f.write("|--------|--------|--------|\n")
-                      for name, _, msg in failed:
-                          f.write(f"| {clean_name(name)} | :x: | {msg} |\n")
+                      f.write("| Module | Result | Duration | Reason |\n")
+                      f.write("|--------|--------|----------|--------|\n")
+                      for name, _, msg, time in failed:
+                          f.write(f"| {clean_name(name)} | :x: | {time:.1f}s | {msg} |\n")
+                      f.write("\n")
+
+                  if skipped:
+                      f.write("| Module | Result | Duration | Reason |\n")
+                      f.write("|--------|--------|----------|--------|\n")
+                      for name, _, msg, time in skipped:
+                          f.write(f"| {clean_name(name)} | :fast_forward: | {time:.1f}s | {msg} |\n")
                       f.write("\n")
 
                   if passed:
