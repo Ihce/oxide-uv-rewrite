@@ -112,14 +112,74 @@ jobs:
         continue-on-error: true
         run: uv run pytest src/oxide/test/test_module_imports.py --junitxml=test-results.xml
 
-      - name: Test Report
-        uses: mikepenz/action-junit-report@v6
+      - name: Generate report
         if: always()
-        with:
-          report_paths: test-results.xml
-          detailed_summary: true
-          include_passed: true
-          group_suite: true
+        run: |
+          SUMMARY_PATH="$GITHUB_STEP_SUMMARY" python3 << 'SCRIPT'
+          import os
+          import xml.etree.ElementTree as ET
+
+          summary_path = os.environ["SUMMARY_PATH"]
+          tree = ET.parse("test-results.xml")
+          root = tree.getroot()
+
+          suites = {}
+          for tc in root.iter("testcase"):
+              suite = tc.get("classname", "unknown").split(".")[-1]
+              name = tc.get("name")
+              failure = tc.find("failure")
+              error = tc.find("error")
+
+              if failure is not None:
+                  msg = failure.get("message", "").split("\n")[0]
+                  status = "fail"
+              elif error is not None:
+                  msg = error.get("message", "").split("\n")[0]
+                  status = "error"
+              else:
+                  msg = ""
+                  status = "pass"
+
+              suites.setdefault(suite, []).append((name, status, msg))
+
+          def clean_name(n):
+              if "[" in n:
+                  n = n.split("[", 1)[1].rstrip("]")
+              elif n.startswith("test_"):
+                  n = n[5:]
+              return n
+
+          total_tests = sum(len(t) for t in suites.values())
+          total_pass = sum(1 for s in suites.values() for _, st, _ in s if st == "pass")
+          total_fail = sum(1 for s in suites.values() for _, st, _ in s if st != "pass")
+          total_skip = 0
+
+          with open(summary_path, "w") as f:
+              # Summary badge table
+              f.write("| | Tests | Passed :white_check_mark: | Skipped | Failed :x: |\n")
+              f.write("|---|---|---|---|---|\n")
+              f.write(f"| Oxide Test Report | {total_tests} ran | {total_pass} passed | {total_skip} skipped | {total_fail} failed |\n\n")
+
+              # Detailed results table
+              f.write("| Test | Result | Reason |\n")
+              f.write("|------|--------|--------|\n")
+
+              for suite, tests in suites.items():
+                  passed = [t for t in tests if t[1] == "pass"]
+                  failed = [t for t in tests if t[1] != "pass"]
+
+                  # Suite header row
+                  f.write(f"| **{suite}** | | |\n")
+
+                  # Failed tests with reason
+                  for name, _, msg in failed:
+                      f.write(f"| {clean_name(name)} | :x: failed | {msg} |\n")
+
+                  # Collapsed passed count
+                  if passed:
+                      f.write(f"| *{len(passed)} passed* | :white_check_mark: | |\n")
+
+          SCRIPT
 
       - name: Check results
         if: steps.tests.outcome == 'failure'
