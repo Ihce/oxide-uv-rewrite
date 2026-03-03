@@ -117,7 +117,7 @@ jobs:
       - name: Run tests
         id: tests
         continue-on-error: true
-        run: uv run pytest src/oxide/test/test_module_imports.py --junitxml=test-results.xml
+        run: uv run pytest src/oxide/test/test_module_imports.py --junitxml=test-results.xml --log-cli-level=INFO -s
 
       - name: Generate report
         if: always()

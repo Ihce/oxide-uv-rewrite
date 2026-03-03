@@ -17,6 +17,9 @@ SKIP_MODULES = {
     "problstc_disasm",
     "binary_visualizer",
     "byte_ngrams",
+    "mcp_control_flow_graph",
+    "function_representations",
+    "file_img",
 }
 
 
