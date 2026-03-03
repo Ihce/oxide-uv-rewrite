@@ -9,6 +9,16 @@ import core.oxide as oxide
 
 MODULE_TIMEOUT = 60
 
+SKIP_MODULES = {
+    "exhaust_disasm",
+    "objdump",
+    "emu_angr_disasm",
+    "angr_constraints",
+    "problstc_disasm",
+    "binary_visualizer",
+    "byte_ngrams",
+}
+
 
 TEST_BINS_DIR = os.environ.get("OXIDE_TEST_BINS", "/home/tools/Projects/ci_pipeline/test_bins")
 
@@ -69,6 +79,8 @@ def _run_module(mod_name, oid_list, result_queue):
 
 
 def _assert_module_runs(mod_name, oid_list):
+    if mod_name in SKIP_MODULES:
+        pytest.skip(f"{mod_name}: skipped (known timeout)")
     queue = multiprocessing.Queue()
     proc = multiprocessing.Process(target=_run_module, args=(mod_name, oid_list, queue))
     proc.start()

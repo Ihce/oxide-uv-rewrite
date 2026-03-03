@@ -33,31 +33,32 @@ jobs:
 
       - name: Create oxide config
         run: |
-          mkdir -p ~/.config/oxide ~/.local/share/oxide/scratch
-          cat > ~/.config/oxide/.config.txt << CONF
+          mkdir -p $HOME/.config/oxide
+          rm -rf $HOME/.local/share/oxide
+          cat > $HOME/.config/oxide/.config.txt << CONF
           [dir]
-          config = ~/.config/oxide/.config.txt
+          config = $HOME/.config/oxide/.config.txt
           root = ${{ github.workspace }}/src/oxide
           oxide = ${{ github.workspace }}/src/oxide/core
           libraries = ${{ github.workspace }}/src/oxide/core/libraries
           modules = ${{ github.workspace }}/src/oxide/modules
-          plugins = ~/.local/share/oxide/plugins
-          plugins_dev = ~/.local/share/oxide/plugins_dev
-          data_dir = ~/.local/share/oxide
-          datasets = ~/.local/share/oxide/datasets
-          datastore = ~/.local/share/oxide/db
-          localstore = ~/.local/share/oxide/localstore
-          logs = ~/.local/share/oxide
-          reference = ~/.local/share/oxide/reference
-          scratch = ~/.local/share/oxide/scratch
-          sample_dataset = ~/.local/share/oxide/datasets/sample_dataset
+          plugins = $HOME/.local/share/oxide/plugins
+          plugins_dev = $HOME/.local/share/oxide/plugins_dev
+          data_dir = $HOME/.local/share/oxide
+          datasets = $HOME/.local/share/oxide/datasets
+          datastore = $HOME/.local/share/oxide/db
+          localstore = $HOME/.local/share/oxide/localstore
+          logs = $HOME/.local/share/oxide
+          reference = $HOME/.local/share/oxide/reference
+          scratch = $HOME/.local/share/oxide/scratch
+          sample_dataset = $HOME/.local/share/oxide/datasets/sample_dataset
           ghidra_path = ${GHIDRA_PATH}
           ghidra_path2 =
           ghidra_path3 =
           ghidra_path4 =
           ghidra_path5 =
           ida_path =
-          ghidra_project = ~/.local/share/oxide/scratch
+          ghidra_project = $HOME/.local/share/oxide/scratch
           scripts = ${{ github.workspace }}/scripts
           local_llm_path =
 
@@ -123,11 +124,33 @@ jobs:
         run: |
           SUMMARY_PATH="$GITHUB_STEP_SUMMARY" python3 << 'SCRIPT'
           import os
+          import subprocess
           import xml.etree.ElementTree as ET
 
           summary_path = os.environ["SUMMARY_PATH"]
           tree = ET.parse("test-results.xml")
           root = tree.getroot()
+
+          SUITE_TO_TYPE = {
+              "TestSourceImports": "source",
+              "TestExtractorImports": "extractors",
+              "TestExtractorExecution": "extractors",
+              "TestAnalyzerImports": "analyzers",
+              "TestAnalyzerExecution": "analyzers",
+              "TestMapReducerImports": "map_reducers",
+              "TestMapReducerExecution": "map_reducers",
+          }
+
+          def git_last_author(mod_type, mod_name):
+              try:
+                  path = f"src/oxide/modules/{mod_type}/{mod_name}"
+                  out = subprocess.check_output(
+                      ["git", "log", "-1", "--format=%an", "--", path],
+                      text=True, stderr=subprocess.DEVNULL
+                  ).strip()
+                  return out or "—"
+              except Exception:
+                  return "—"
 
           suites = {}
           for tc in root.iter("testcase"):
@@ -178,14 +201,16 @@ jobs:
                   passed = [t for t in tests if t[1] == "pass"]
                   failed = [t for t in tests if t[1] in ("fail", "error")]
                   skipped = [t for t in tests if t[1] == "skip"]
+                  mod_type = SUITE_TO_TYPE.get(suite, "")
 
                   f.write(f"## {format_suite(suite)}\n\n")
 
                   if failed:
-                      f.write("| Module | Result | Duration | Reason |\n")
-                      f.write("|--------|--------|----------|--------|\n")
+                      f.write("| Module | Result | Duration | Reason | Last Modified By |\n")
+                      f.write("|--------|--------|----------|--------|------------------|\n")
                       for name, _, msg, time in failed:
-                          f.write(f"| {clean_name(name)} | :x: | {time:.1f}s | {msg} |\n")
+                          author = git_last_author(mod_type, clean_name(name)) if mod_type else "—"
+                          f.write(f"| {clean_name(name)} | :x: | {time:.1f}s | {msg} | {author} |\n")
                       f.write("\n")
 
                   if skipped:
