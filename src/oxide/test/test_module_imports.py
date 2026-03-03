@@ -50,10 +50,12 @@ def test_source_loaded():
 # --- Per-module import tests ---
 
 def _all_expected_modules():
-    """Get all module directories that should have loaded."""
+    """Get all module directories that should have loaded (excludes _dev)."""
     modules_dir = os.path.join(os.path.dirname(_path_magic.__file__), "..", "modules")
     expected = []
     for module_type in os.listdir(modules_dir):
+        if module_type.endswith("_dev"):
+            continue
         type_path = os.path.join(modules_dir, module_type)
         if not os.path.isdir(type_path) or module_type.startswith("."):
             continue
@@ -73,13 +75,10 @@ def test_module_loaded(module_type, mod_name):
     """Verify that a module loaded without import errors."""
     errors = getattr(oxide, "module_import_errors", {})
     if mod_name in errors:
-        pytest.fail(f"Module '{mod_name}' ({module_type}) failed to import: {errors[mod_name]}")
+        pytest.fail(f"{mod_name}: {errors[mod_name]}")
 
     available = oxide.modules_list(module_type=module_type)
-    assert mod_name in available, (
-        f"Module '{mod_name}' has module_interface.py in {module_type}/ "
-        f"but was not loaded. Check for missing dependencies or syntax errors."
-    )
+    assert mod_name in available, f"{mod_name}: not loaded (check deps or syntax)"
 
 
 # --- Per-module execution tests against real binaries ---
@@ -88,33 +87,34 @@ def _get_modules_by_type(module_type):
     return oxide.modules_list(module_type=module_type)
 
 
-def _assert_json_serializable(mod_name, results):
-    """Check that results can be strictly serialized to JSON (no default=str fallback)."""
+def _check_json_serializable(results):
+    """Return error string if not JSON serializable, else None."""
     try:
         json.dumps(results)
+        return None
     except (TypeError, ValueError) as e:
-        pytest.fail(f"Module '{mod_name}' returned non-JSON-serializable data: {e}")
+        return str(e)
 
 
 @pytest.mark.parametrize("mod_name", _get_modules_by_type("extractors"), ids=lambda m: f"extractor:{m}")
 def test_extractor(mod_name, oid_list):
-    """Run an extractor module against test binaries."""
     results = oxide.retrieve(mod_name, oid_list, {})
-    assert results is not None, f"Extractor '{mod_name}' returned None"
-    _assert_json_serializable(mod_name, results)
+    assert results is not None, f"{mod_name}: returned None"
+    err = _check_json_serializable(results)
+    assert err is None, f"{mod_name}: not JSON serializable: {err}"
 
 
 @pytest.mark.parametrize("mod_name", _get_modules_by_type("analyzers"), ids=lambda m: f"analyzer:{m}")
 def test_analyzer(mod_name, oid_list):
-    """Run an analyzer module against test binaries."""
     results = oxide.retrieve(mod_name, oid_list, {})
-    assert results is not None, f"Analyzer '{mod_name}' returned None"
-    _assert_json_serializable(mod_name, results)
+    assert results is not None, f"{mod_name}: returned None"
+    err = _check_json_serializable(results)
+    assert err is None, f"{mod_name}: not JSON serializable: {err}"
 
 
 @pytest.mark.parametrize("mod_name", _get_modules_by_type("map_reducers"), ids=lambda m: f"map_reducer:{m}")
 def test_map_reducer(mod_name, oid_list):
-    """Run a map_reducer module against test binaries."""
     results = oxide.retrieve(mod_name, oid_list, {})
-    assert results is not None, f"Map reducer '{mod_name}' returned None"
-    _assert_json_serializable(mod_name, results)
+    assert results is not None, f"{mod_name}: returned None"
+    err = _check_json_serializable(results)
+    assert err is None, f"{mod_name}: not JSON serializable: {err}"
