@@ -33,7 +33,7 @@ jobs:
 
       - name: Create oxide config
         run: |
-          mkdir -p ~/.config/oxide ~/.local/share/oxide
+          mkdir -p ~/.config/oxide ~/.local/share/oxide/scratch
           cat > ~/.config/oxide/.config.txt << CONF
           [dir]
           config = ~/.config/oxide/.config.txt

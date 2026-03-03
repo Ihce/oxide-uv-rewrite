@@ -1,7 +1,7 @@
 """Test that oxide modules initialize and can run against real binaries."""
 import json
+import multiprocessing
 import os
-import signal
 
 import _path_magic
 import pytest
@@ -58,26 +58,31 @@ def _assert_module_loaded(module_type, mod_name):
     assert mod_name in available, f"{mod_name}: not loaded (check deps or syntax)"
 
 
-class _Timeout(Exception):
-    pass
-
-
-def _timeout_handler(signum, frame):
-    raise _Timeout()
+def _run_module(mod_name, oid_list, result_queue):
+    """Target for subprocess — runs module and puts result on queue."""
+    try:
+        results = oxide.retrieve(mod_name, oid_list, {})
+        err = _check_json_serializable(results) if results is not None else None
+        result_queue.put(("ok", results, err))
+    except Exception as e:
+        result_queue.put(("error", str(e), None))
 
 
 def _assert_module_runs(mod_name, oid_list):
-    old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-    signal.alarm(MODULE_TIMEOUT)
-    try:
-        results = oxide.retrieve(mod_name, oid_list, {})
-    except _Timeout:
+    queue = multiprocessing.Queue()
+    proc = multiprocessing.Process(target=_run_module, args=(mod_name, oid_list, queue))
+    proc.start()
+    proc.join(timeout=MODULE_TIMEOUT)
+    if proc.is_alive():
+        proc.kill()
+        proc.join()
         pytest.skip(f"{mod_name}: timed out after {MODULE_TIMEOUT}s")
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
-    assert results is not None, f"{mod_name}: returned None"
-    err = _check_json_serializable(results)
+    if queue.empty():
+        pytest.fail(f"{mod_name}: process exited with no result (code {proc.exitcode})")
+    status, result, err = queue.get_nowait()
+    if status == "error":
+        pytest.fail(f"{mod_name}: {result}")
+    assert result is not None, f"{mod_name}: returned None"
     assert err is None, f"{mod_name}: not JSON serializable: {err}"
 
 
