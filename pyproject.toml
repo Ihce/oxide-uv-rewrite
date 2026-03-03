@@ -69,7 +69,7 @@ testpaths = ["src/oxide/test"]
 python_files = ["*_test.py", "test_*.py", "test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=line"
 
 [dependency-groups]
 dev = [
