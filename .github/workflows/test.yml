@@ -107,13 +107,12 @@ jobs:
           CONF
 
       - name: Run tests
-        if: always()
-        run: uv run pytest src/oxide/test/test_module_imports.py --junitxml=test-results.xml || true
+        id: tests
+        continue-on-error: true
+        run: uv run pytest src/oxide/test/test_module_imports.py --junitxml=test-results.xml
 
       - name: Generate report
         if: always()
-        env:
-          SUMMARY_FILE: ${{ github.step_summary }}
         run: |
           python3 - "$GITHUB_STEP_SUMMARY" << 'SCRIPT'
           import sys
@@ -169,7 +168,8 @@ jobs:
                       names = ", ".join(clean_name(t[0]) for t in passed)
                       f.write(f"<details><summary>:white_check_mark: {len(passed)} passed</summary>\n\n{names}\n\n</details>\n\n")
 
-          # Exit with failure if tests failed
-          failures = int(root.get("failures", 0)) + int(root.get("errors", 0))
-          sys.exit(1 if failures else 0)
           SCRIPT
+
+      - name: Check results
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
