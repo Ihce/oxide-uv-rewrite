@@ -19,10 +19,15 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
+      - name: Find latest Ghidra
+        run: |
+          GHIDRA_PATH=$(ls -d ~/.local/opt/gvm/ghidra_* 2>/dev/null | sort -V | tail -1)
+          echo "GHIDRA_PATH=${GHIDRA_PATH}" >> $GITHUB_ENV
+
       - name: Create oxide config
         run: |
           mkdir -p ~/.config/oxide ~/.local/share/oxide
-          cat > ~/.config/oxide/.config.txt << 'CONF'
+          cat > ~/.config/oxide/.config.txt << CONF
           [dir]
           config = ~/.config/oxide/.config.txt
           root = ${{ github.workspace }}/src/oxide
@@ -39,7 +44,7 @@ jobs:
           reference = ~/.local/share/oxide/reference
           scratch = ~/.local/share/oxide/scratch
           sample_dataset = ~/.local/share/oxide/datasets/sample_dataset
-          ghidra_path =
+          ghidra_path = ${GHIDRA_PATH}
           ghidra_path2 =
           ghidra_path3 =
           ghidra_path4 =
@@ -102,4 +107,12 @@ jobs:
           CONF
 
       - name: Run module import tests
-        run: uv run pytest src/oxide/test/test_module_imports.py
+        run: uv run pytest src/oxide/test/test_module_imports.py --junitxml=test-results.xml
+
+      - name: Test Report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Pytest Results
+          path: test-results.xml
+          reporter: java-junit
