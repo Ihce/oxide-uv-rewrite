@@ -106,13 +106,70 @@ jobs:
           docker_image =
           CONF
 
-      - name: Run module import tests
-        run: uv run pytest src/oxide/test/test_module_imports.py --junitxml=test-results.xml
-
-      - name: Test Report
-        uses: dorny/test-reporter@v1
+      - name: Run tests
         if: always()
-        with:
-          name: Pytest Results
-          path: test-results.xml
-          reporter: java-junit
+        run: uv run pytest src/oxide/test/test_module_imports.py --junitxml=test-results.xml || true
+
+      - name: Generate report
+        if: always()
+        env:
+          SUMMARY_FILE: ${{ github.step_summary }}
+        run: |
+          python3 - "$GITHUB_STEP_SUMMARY" << 'SCRIPT'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          summary_path = sys.argv[1]
+          tree = ET.parse("test-results.xml")
+          root = tree.getroot()
+
+          suites = {}
+          for tc in root.iter("testcase"):
+              suite = tc.get("classname", "unknown").split(".")[-1]
+              name = tc.get("name")
+              failure = tc.find("failure")
+              error = tc.find("error")
+
+              if failure is not None:
+                  msg = failure.get("message", "").split("\n")[0]
+                  status = "fail"
+              elif error is not None:
+                  msg = error.get("message", "").split("\n")[0]
+                  status = "error"
+              else:
+                  msg = ""
+                  status = "pass"
+
+              suites.setdefault(suite, []).append((name, status, msg))
+
+          def clean_name(n):
+              for prefix in ["test_module_loaded[", "test_extractor[", "test_analyzer[", "test_map_reducer[", "test_"]:
+                  n = n.replace(prefix, "")
+              return n.rstrip("]")
+
+          with open(summary_path, "w") as f:
+              total_pass = sum(1 for s in suites.values() for _, st, _ in s if st == "pass")
+              total_fail = sum(1 for s in suites.values() for _, st, _ in s if st != "pass")
+              f.write(f"# Test Results: {total_pass} passed, {total_fail} failed\n\n")
+
+              for suite, tests in suites.items():
+                  passed = [t for t in tests if t[1] == "pass"]
+                  failed = [t for t in tests if t[1] != "pass"]
+
+                  f.write(f"## {suite}\n\n")
+
+                  if failed:
+                      f.write("| Module | Reason |\n")
+                      f.write("|--------|--------|\n")
+                      for name, _, msg in failed:
+                          f.write(f"| {clean_name(name)} | {msg} |\n")
+                      f.write("\n")
+
+                  if passed:
+                      names = ", ".join(clean_name(t[0]) for t in passed)
+                      f.write(f"<details><summary>:white_check_mark: {len(passed)} passed</summary>\n\n{names}\n\n</details>\n\n")
+
+          # Exit with failure if tests failed
+          failures = int(root.get("failures", 0)) + int(root.get("errors", 0))
+          sys.exit(1 if failures else 0)
+          SCRIPT
