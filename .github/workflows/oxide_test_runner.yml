@@ -18,7 +18,7 @@ jobs:
         run: uv python install
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --dev --extra full
 
       - name: Find latest Ghidra
         run: |
