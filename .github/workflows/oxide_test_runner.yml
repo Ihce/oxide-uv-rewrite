@@ -12,14 +12,17 @@ jobs:
   oxide-test:
     name: Oxide Test Runner
     runs-on: self-hosted
+    env:
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
       - name: Clean PATH
         run: echo "PATH=$(echo $PATH | tr ':' '\n' | grep -v anaconda | tr '\n' ':')" >> $GITHUB_ENV
+
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v6
         with:
           cache-local-path: /home/tools/Projects/ci_pipeline/.uv-cache
 
@@ -27,7 +30,7 @@ jobs:
         run: uv python install 3.13
 
       - name: Install dependencies
-        run: uv sync --dev --group ml --python 3.13
+        run: uv sync --dev --python 3.13
 
       - name: Find latest Ghidra
         run: |
@@ -37,7 +40,9 @@ jobs:
       - name: Create oxide config
         run: |
           mkdir -p $HOME/.config/oxide
-          rm -rf $HOME/.local/share/oxide
+          rm -rf $HOME/.local/share/oxide/db
+          rm -rf $HOME/.local/share/oxide/localstore
+          rm -rf $HOME/.local/share/oxide/scratch
           cat > $HOME/.config/oxide/.config.txt << CONF
           [dir]
           config = $HOME/.config/oxide/.config.txt
@@ -120,17 +125,25 @@ jobs:
       - name: Run tests
         id: tests
         continue-on-error: true
-        run: uv run pytest src/oxide/test/test_module_imports.py --junitxml=test-results.xml
+        run: uv run pytest src/oxide/test/test_module_imports.py --junitxml=test-results.xml -v
 
       - name: Generate report
         if: always()
         run: |
           SUMMARY_PATH="$GITHUB_STEP_SUMMARY" uv run python3 << 'SCRIPT'
           import os
+          import re
           import subprocess
           import xml.etree.ElementTree as ET
+          from collections import defaultdict
 
           summary_path = os.environ["SUMMARY_PATH"]
+
+          if not os.path.exists("test-results.xml"):
+              with open(summary_path, "w") as f:
+                  f.write("## :x: Test Results\n\nNo test-results.xml found — tests may have failed to start.\n")
+              raise SystemExit(0)
+
           tree = ET.parse("test-results.xml")
           root = tree.getroot()
 
@@ -144,6 +157,12 @@ jobs:
               "TestMapReducerExecution": "map_reducers",
           }
 
+          PER_BINARY_SUITES = {
+              "TestExtractorPerBinary",
+              "TestAnalyzerPerBinary",
+              "TestMapReducerPerBinary",
+          }
+
           def git_last_author(mod_type, mod_name):
               try:
                   path = f"src/oxide/modules/{mod_type}/{mod_name}"
@@ -155,11 +174,17 @@ jobs:
               except Exception:
                   return "—"
 
+          # ---- Collect standard test results ----
           suites = {}
+          # ---- Collect per-binary matrix results ----
+          # matrix[suite][module][(arch, os)] = status
+          matrix = defaultdict(lambda: defaultdict(dict))
+          matrix_targets = set()  # all (arch, os) combos seen
+
           for tc in root.iter("testcase"):
               suite = tc.get("classname", "unknown").split(".")[-1]
               name = tc.get("name")
-              time = float(tc.get("time", 0))
+              time_val = float(tc.get("time", 0))
               failure = tc.find("failure")
               error = tc.find("error")
               skipped = tc.find("skipped")
@@ -177,7 +202,19 @@ jobs:
                   msg = ""
                   status = "pass"
 
-              suites.setdefault(suite, []).append((name, status, msg, time))
+              if suite in PER_BINARY_SUITES:
+                  # Parse the parametrized id: mod_name|arch-os|filename
+                  # name looks like: test_run[module|ARM64-Linux|elf-Linux-ARM64-bash]
+                  m = re.search(r'\[(.+?)\|(.+?)-(.+?)\|(.+?)\]', name)
+                  if m:
+                      mod_name = m.group(1)
+                      arch = m.group(2)
+                      os_name = m.group(3)
+                      target = (arch, os_name)
+                      matrix_targets.add(target)
+                      matrix[suite][mod_name][target] = status
+              else:
+                  suites.setdefault(suite, []).append((name, status, msg, time_val))
 
           def clean_name(n):
               if "[" in n:
@@ -187,7 +224,6 @@ jobs:
               return n
 
           def format_suite(n):
-              import re
               return re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', n)
 
           total_tests = sum(len(t) for t in suites.values())
@@ -195,15 +231,37 @@ jobs:
           total_fail = sum(1 for s in suites.values() for _, st, _, _ in s if st in ("fail", "error"))
           total_skip = sum(1 for s in suites.values() for _, st, _, _ in s if st == "skip")
 
+          # Count matrix results too
+          matrix_total = 0
+          matrix_pass = 0
+          matrix_fail = 0
+          matrix_skip = 0
+          for suite_data in matrix.values():
+              for mod_data in suite_data.values():
+                  for st in mod_data.values():
+                      matrix_total += 1
+                      if st == "pass":
+                          matrix_pass += 1
+                      elif st in ("fail", "error"):
+                          matrix_fail += 1
+                      elif st == "skip":
+                          matrix_skip += 1
+
+          grand_total = total_tests + matrix_total
+          grand_pass = total_pass + matrix_pass
+          grand_fail = total_fail + matrix_fail
+          grand_skip = total_skip + matrix_skip
+
           with open(summary_path, "w") as f:
               f.write("| | Tests | Passed :white_check_mark: | Skipped :fast_forward: | Failed :x: |\n")
               f.write("|---|---|---|---|---|\n")
-              f.write(f"| Oxide Test Report | {total_tests} ran | {total_pass} passed | {total_skip} skipped | {total_fail} failed |\n\n")
+              f.write(f"| Oxide Test Report | {grand_total} ran | {grand_pass} passed | {grand_skip} skipped | {grand_fail} failed |\n\n")
 
+              # ---- Standard suites ----
               for suite, tests in suites.items():
                   passed = [t for t in tests if t[1] == "pass"]
                   failed = [t for t in tests if t[1] in ("fail", "error")]
-                  skipped = [t for t in tests if t[1] == "skip"]
+                  skipped_list = [t for t in tests if t[1] == "skip"]
                   mod_type = SUITE_TO_TYPE.get(suite, "")
 
                   f.write(f"## {format_suite(suite)}\n\n")
@@ -211,20 +269,79 @@ jobs:
                   if failed:
                       f.write("| Module | Result | Duration | Reason | Last Modified By |\n")
                       f.write("|--------|--------|----------|--------|------------------|\n")
-                      for name, _, msg, time in failed:
+                      for name, _, msg, time_val in failed:
                           author = git_last_author(mod_type, clean_name(name)) if mod_type else "—"
-                          f.write(f"| {clean_name(name)} | :x: | {time:.1f}s | {msg} | {author} |\n")
+                          f.write(f"| {clean_name(name)} | :x: | {time_val:.1f}s | {msg} | {author} |\n")
                       f.write("\n")
 
-                  if skipped:
+                  if skipped_list:
                       f.write("| Module | Result | Duration | Reason |\n")
                       f.write("|--------|--------|----------|--------|\n")
-                      for name, _, msg, time in skipped:
-                          f.write(f"| {clean_name(name)} | :fast_forward: | {time:.1f}s | {msg} |\n")
+                      for name, _, msg, time_val in skipped_list:
+                          f.write(f"| {clean_name(name)} | :fast_forward: | {time_val:.1f}s | {msg} |\n")
                       f.write("\n")
 
                   if passed:
                       f.write(f":white_check_mark: {len(passed)} passed\n\n")
+
+              # ---- Per-binary arch/OS matrix ----
+              if matrix:
+                  targets = sorted(matrix_targets, key=lambda t: (t[1], t[0]))
+
+                  suite_labels = {
+                      "TestExtractorPerBinary": "Extractor",
+                      "TestAnalyzerPerBinary": "Analyzer",
+                      "TestMapReducerPerBinary": "Map Reducer",
+                  }
+
+                  for suite_name, modules in matrix.items():
+                      label = suite_labels.get(suite_name, suite_name)
+                      f.write(f"## {label} Compatibility Matrix\n\n")
+
+                      # Header row
+                      target_headers = [f"{arch}/{os_n}" for arch, os_n in targets]
+                      f.write(f"| Module | {' | '.join(target_headers)} | Score |\n")
+                      f.write(f"|--------| {' | '.join(['------'] * len(targets))} |-------|\n")
+
+                      for mod_name in sorted(modules.keys()):
+                          results = modules[mod_name]
+                          cells = []
+                          passes = 0
+                          total = 0
+                          for target in targets:
+                              st = results.get(target)
+                              if st == "pass":
+                                  cells.append(":white_check_mark:")
+                                  passes += 1
+                                  total += 1
+                              elif st in ("fail", "error"):
+                                  cells.append(":x:")
+                                  total += 1
+                              elif st == "skip":
+                                  cells.append(":fast_forward:")
+                                  total += 1
+                              else:
+                                  cells.append("—")
+                          score = f"{passes}/{total}" if total > 0 else "—"
+                          f.write(f"| {mod_name} | {' | '.join(cells)} | {score} |\n")
+
+                      f.write("\n")
+
+                      # Summary of failures by arch/OS
+                      failures_by_target = defaultdict(list)
+                      for mod_name, results in modules.items():
+                          for target, st in results.items():
+                              if st in ("fail", "error"):
+                                  failures_by_target[target].append(mod_name)
+
+                      if failures_by_target:
+                          f.write(f"<details>\n<summary>:x: {label} failures by platform</summary>\n\n")
+                          for target in targets:
+                              if target in failures_by_target:
+                                  arch, os_n = target
+                                  mods = failures_by_target[target]
+                                  f.write(f"**{arch}/{os_n}** — {len(mods)} failed: {', '.join(sorted(mods))}\n\n")
+                          f.write("</details>\n\n")
 
           SCRIPT
 
