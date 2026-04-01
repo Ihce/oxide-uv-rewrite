@@ -61,7 +61,7 @@ def _run_ddisasm(file_test, scratch_dir) -> Optional[str]:
     os.makedirs(f"{scratch_dir}/ddisasm/{basename}/", exist_ok=True)
 
     # Mount temp file used in test to binary, store results in scratch dir under binary
-    exe = f"docker run --rm -v {file_test}:/binary -v {scratch_dir}/:/scratch grammatech/ddisasm ddisasm"
+    exe = f"docker run --rm --user {os.getuid()}:{os.getgid()} -v {file_test}:/binary -v {scratch_dir}/:/scratch grammatech/ddisasm ddisasm"
     cmd = f"{exe} --json /scratch/ddisasm/{basename}/cfg.json /binary --debug-dir /scratch/ddisasm/{basename} > {os.devnull}"
 
     # FIXME:: put back to debug
