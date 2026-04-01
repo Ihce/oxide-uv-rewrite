@@ -27,7 +27,7 @@ jobs:
         run: uv python install 3.13
 
       - name: Install dependencies
-        run: uv sync --dev --extra full --python 3.13
+        run: uv sync --dev --group ml --python 3.13
 
       - name: Find latest Ghidra
         run: |
