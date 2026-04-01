@@ -124,7 +124,7 @@ jobs:
       - name: Generate report
         if: always()
         run: |
-          SUMMARY_PATH="$GITHUB_STEP_SUMMARY" python3 << 'SCRIPT'
+          SUMMARY_PATH="$GITHUB_STEP_SUMMARY" uv run python3 << 'SCRIPT'
           import os
           import subprocess
           import xml.etree.ElementTree as ET
